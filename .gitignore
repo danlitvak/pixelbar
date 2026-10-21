@@ -1,0 +1,6 @@
+# Build output. bin\ also holds your config.json (settings; secrets live in Credential Manager).
+bin/
+obj/
+# Frames from --dump / --record runs
+*.bmp
+frames.csv
