@@ -775,7 +775,7 @@ void NetGraph(Canvas& c, int x, int y, int w, int hDown, int hUp, const std::vec
   }
 }
 
-int System(Canvas& c, int y, const UiInput& in) {
+int System(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   const SysState& s = *in.sys;
   int64_t up = s.uptimeMs / 60000;
   char upText[32];
@@ -817,10 +817,15 @@ int System(Canvas& c, int y, const UiInput& in) {
 
   for (const DiskInfo& d : s.disks) {
     double used = 1.0 - (double)d.free / d.total;
-    std::string detail = FormatBytes(d.free) + " FREE OF " + FormatBytes(d.total);
-    y = Metric(c, y, d.root, detail, Pct(used), used >= 0.9 ? kHi : Mid());
+    // Under the alarm line the row flashes: a full disk takes builds, git and agents down with it.
+    bool low = g_cfg.diskWarnGB && d.free < ((uint64_t)g_cfg.diskWarnGB << 30);
+    bool lit = low && (in.now / 400) % 2 == 0;
+    if (lit) c.Fill(0, y - 2, c.w, kLine + 4 + 3, Alpha(40));
+    std::string detail = (low ? "LOW  " : "") + FormatBytes(d.free) + " FREE OF " + FormatBytes(d.total);
+    y = Metric(c, y, d.root, detail, Pct(used), lit || (!low && used >= 0.9) ? kHi : low ? Lo() : Mid());
     Cells(c, 0, y, c.w, 3, 60, 1, used);
     y += 3 + 6;
+    if (low) out.animating = true;
   }
 
   std::string ping = s.online ? (s.pingMs >= 0 ? std::to_string(s.pingMs) + " ms" : "") : "OFFLINE";
@@ -872,6 +877,7 @@ int Processes(Canvas& c, int y, const UiInput& in, UiOutput& out) {
 enum Opt {
   O_24H, O_SECONDS, O_DOTS, O_PLACE, O_UNITS, O_AGENT_ROWS, O_KEEP_DONE, O_CAL_DAYS, O_CAL_ROWS,
   O_SLACK_ROWS, O_PROC_ROWS, O_PROC_SORT, O_MONITOR, O_ALIGN, O_WIDTH, O_DIM, O_FAINT, O_FPS, O_RESERVE,
+  O_DISK_WARN,
 };
 
 struct Place {
@@ -906,6 +912,7 @@ std::string OptValue(int o) {
     case O_FAINT: return std::to_string(c.faint);
     case O_FPS: return std::to_string(c.fps);
     case O_RESERVE: return c.reserve ? "ON" : "OFF";
+    case O_DISK_WARN: return c.diskWarnGB ? "UNDER " + std::to_string(c.diskWarnGB) + " GB" : "OFF";
   }
   return {};
 }
@@ -948,6 +955,13 @@ void OptStep(Config& c, int o, int dir) {
     case O_FAINT: step(c.faint, 6, 18, 140); break;
     case O_FPS: step(c.fps, 3, 6, 30); break;
     case O_RESERVE: c.reserve = !c.reserve; break;
+    case O_DISK_WARN: {
+      static const int kSteps[] = {0, 2, 5, 10, 20, 50};
+      int n = (int)std::size(kSteps), i = 0;
+      while (i + 1 < n && kSteps[i] < c.diskWarnGB) i++;
+      c.diskWarnGB = kSteps[std::clamp(i + dir, 0, n - 1)];
+      break;
+    }
   }
 }
 
@@ -1044,6 +1058,7 @@ int Settings(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   y += 6;
   y = Subhead(c, y, "CALENDAR");
   y = SecretRow(c, y, "ICAL LINK", in.icalSet, 0, in, out);
+  y = SecretRow(c, y, "SECOND LINK", in.ical2Set, 2, in, out);
   y = OptRow(c, y, "DAYS AHEAD", O_CAL_DAYS, in, out);
   y = OptRow(c, y, "ROWS", O_CAL_ROWS, in, out);
   y += 6;
@@ -1054,6 +1069,9 @@ int Settings(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   y = Subhead(c, y, "PROCESSES");
   y = OptRow(c, y, "ROWS", O_PROC_ROWS, in, out);
   y = OptRow(c, y, "SORT", O_PROC_SORT, in, out);
+  y += 6;
+  y = Subhead(c, y, "SYSTEM");
+  y = OptRow(c, y, "LOW DISK ALARM", O_DISK_WARN, in, out);
   y += 6;
   y = Subhead(c, y, "DISPLAY");
   y = OptRow(c, y, "MONITOR", O_MONITOR, in, out);
@@ -1163,7 +1181,7 @@ void RenderUI(Canvas& c, const UiInput& in, UiOutput& out) {
       else if (s == "weather")
         end = WeatherSection(c, start, in);
       else if (s == "system")
-        end = System(c, start, in);
+        end = System(c, start, in, out);
       else if (s == "processes")
         end = Processes(c, start, in, out);
       else

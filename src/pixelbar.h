@@ -114,6 +114,7 @@ struct Config {
   bool procByCpu = false;
   int fps = 15;
   int dim = 150, faint = 56, background = 1;  // alpha of white on the black desktop
+  int diskWarnGB = 5;  // a fixed disk with less free space flashes and Windows is told; 0 = off
 };
 extern Config g_cfg;  // written only on the UI thread; other threads read ConfigCopy()
 extern const char* const kSectionNames[];
@@ -325,6 +326,7 @@ bool SecretSet(const wchar_t* name, const std::string& value);
 void SecretClear(const wchar_t* name);
 constexpr const wchar_t* kSecretIcal = L"pixelbar:ical";
 constexpr const wchar_t* kSecretSlack = L"pixelbar:slack";
+constexpr const wchar_t* kSecretIcal2 = L"pixelbar:ical2";  // a second calendar, e.g. Canvas due dates
 
 // ---- demo.cpp ---------------------------------------------------------------
 
@@ -361,7 +363,7 @@ struct UiInput {
   const AiToday* ai = nullptr;
   int hoverId = HIT_NONE, hoverIndex = -1;
   bool hovering = false;  // pointer anywhere over the column
-  bool settings = false, autostart = false, icalSet = false, slackSet = false;
+  bool settings = false, autostart = false, icalSet = false, ical2Set = false, slackSet = false;
   std::string flash;  // one-line confirmation shown in the settings panel
 };
 // Rows of the layout that move and fade as one: a section, the settings footer, or the whole

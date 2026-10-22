@@ -540,21 +540,51 @@ void ParseIcs(const std::string& text, int64_t from, int64_t to, std::vector<Cal
   }
 }
 
+// One feed's events in [from, to), or why there are none.
+bool FetchFeed(std::string link, int64_t from, int64_t to, std::vector<CalEvent>& out, std::string& err) {
+  if (link.rfind("webcal://", 0) == 0) link = "https://" + link.substr(9);
+  HttpResult r = HttpGet(link);
+  bool ok = r.error.empty() && r.body.find("BEGIN:VCALENDAR") != std::string::npos;
+  if (ok) {
+    ParseIcs(r.body, from, to, out);
+  } else {
+    err = r.error.empty() ? "not a calendar link" : r.error;
+    // Google's "public address" 404s unless the calendar is shared publicly; the secret one works.
+    if (r.status == 404 && link.find("/public/basic.ics") != std::string::npos)
+      err = "not public: paste its secret address";
+    else if (r.status == 404)
+      err = "link not found (404)";
+    else if (r.status == 401 || r.status == 403)
+      err = "link refused (" + std::to_string(r.status) + ")";
+  }
+  SecureZeroMemory(link.data(), link.size());
+  return ok;
+}
+
+// Both links (the main calendar, and a second such as Canvas due dates) merge into one list;
+// a failing feed shows as a note above the other's events instead of blanking them.
 void FetchCalendar(const Config& cfg) {
-  std::string link;
   CalendarState cs;
-  cs.configured = SecretGet(kSecretIcal, link);
+  int64_t now = NowMs(), from = now - 86400000LL, to = now + (int64_t)std::max(1, cfg.calDays) * 86400000LL;
+  std::vector<CalEvent> evs;
+  std::string err;
+  bool any = false;
+  const wchar_t* const kLinks[] = {kSecretIcal, kSecretIcal2};
+  for (int i = 0; i < 2; i++) {
+    std::string link, why;
+    if (!SecretGet(kLinks[i], link)) continue;
+    cs.configured = true;
+    if (FetchFeed(std::move(link), from, to, evs, why))
+      any = true;
+    else if (err.empty())
+      err = i ? "second link: " + why : why;
+  }
   if (!cs.configured) {
     std::lock_guard lk(g_mu);
     g_calendar = cs;
     return;
   }
-  if (link.rfind("webcal://", 0) == 0) link = "https://" + link.substr(9);
-  HttpResult r = HttpGet(link);
-  int64_t now = NowMs();
-  if (r.error.empty() && r.body.find("BEGIN:VCALENDAR") != std::string::npos) {
-    std::vector<CalEvent> evs;
-    ParseIcs(r.body, now - 86400000LL, now + (int64_t)std::max(1, cfg.calDays) * 86400000LL, evs);
+  if (any) {
     evs.erase(std::remove_if(evs.begin(), evs.end(),
                              [&](const CalEvent& e) { return std::max(e.end, e.start + 60000) <= now; }),
               evs.end());
@@ -565,16 +595,8 @@ void FetchCalendar(const Config& cfg) {
     cs.ok = true;
     cs.events = std::move(evs);
     cs.fetchedAt = now;
+    cs.error = err;
   }
-  std::string err = r.error.empty() ? "not a calendar link" : r.error;
-  // Google's "public address" 404s unless the calendar is shared publicly; the secret one works.
-  if (r.status == 404 && link.find("/public/basic.ics") != std::string::npos)
-    err = "not public: paste its secret address";
-  else if (r.status == 404)
-    err = "link not found (404)";
-  else if (r.status == 401 || r.status == 403)
-    err = "link refused (" + std::to_string(r.status) + ")";
-  SecureZeroMemory(link.data(), link.size());
   std::lock_guard lk(g_mu);
   if (cs.ok) {
     g_calendar = std::move(cs);
@@ -756,7 +778,7 @@ void OnlineStart(HWND notify) {
   g_kick = CreateEventW(nullptr, FALSE, FALSE, nullptr);
   // Known up front, so the first frames say LOADING instead of asking for a link that's saved.
   std::string secret;
-  g_calendar.configured = SecretGet(kSecretIcal, secret);
+  g_calendar.configured = SecretGet(kSecretIcal, secret) || SecretGet(kSecretIcal2, secret);
   g_slack.configured = SecretGet(kSecretSlack, secret);
   SecureZeroMemory(secret.data(), secret.size());
   std::thread(Run).detach();

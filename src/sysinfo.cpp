@@ -442,7 +442,7 @@ void SysSample(SysState& st) {
   }
 
   if (g_tick % 2 == 0) SampleProcesses(st.procs);
-  if (g_tick % 15 == 0) SampleDisks(st.disks);
+  if (g_tick % 5 == 0) SampleDisks(st.disks);  // often enough to catch a disk filling in minutes
   g_tick++;
 
   SampleNet(st);

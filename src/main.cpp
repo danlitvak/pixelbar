@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <thread>
+#include <unordered_map>
 
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "user32.lib")
@@ -32,6 +33,7 @@ const wchar_t kRunName[] = L"pixelbar";
 
 constexpr UINT WM_PB_APPBAR = WM_APP + 3;  // shell notifications for the reserved strip
 constexpr UINT WM_PB_FRAME = WM_APP + 4;   // the frame pump: draw now, a refresh just began
+constexpr UINT WM_PB_TRAY = WM_APP + 5;    // the low-disk tray icon was clicked
 
 enum { TIMER_TICK = 1, TIMER_ANIM, TIMER_ZORDER, TIMER_ZORDER_SOON, TIMER_DUMP };
 enum { CMD_SETTINGS = 1, CMD_EDIT, CMD_RELOAD, CMD_AUTOSTART, CMD_EXIT };
@@ -62,9 +64,11 @@ struct App {
   CalendarState calendar;
   SlackState slack;
   AiToday ai;
-  bool settings = false, autostart = false, icalSet = false, slackSet = false;
+  bool settings = false, autostart = false, icalSet = false, ical2Set = false, slackSet = false;
   std::string flash;
   int64_t flashUntil = 0;
+  bool trayShown = false;                       // the low-disk icon is in the notification area
+  std::unordered_map<std::string, int> diskLevel;  // per disk: 0 fine, 1 warned, 2 critical
   FileStamp cfgStamp;
   UINT taskbarCreated = 0;
   bool appbar = false;  // registered with the shell as an app bar
@@ -379,6 +383,7 @@ void Render() {
   in.settings = g.settings;
   in.autostart = g.autostart;
   in.icalSet = g.icalSet;
+  in.ical2Set = g.ical2Set;
   in.slackSet = g.slackSet;
   in.flash = g.flash;
   g.layout.Clear(g.layoutRows + 16);  // rows below were never drawn
@@ -488,6 +493,7 @@ bool HasSecret(const wchar_t* name) {
 void RefreshSettingsState() {
   g.autostart = AutostartEnabled();
   g.icalSet = HasSecret(kSecretIcal);
+  g.ical2Set = HasSecret(kSecretIcal2);
   g.slackSet = HasSecret(kSecretSlack);
 }
 
@@ -524,16 +530,18 @@ void ClearClipboard() {
   CloseClipboard();
 }
 
-// The link and token never pass through a text field: copy them, click PASTE.
+// The links and token never pass through a text field: copy them, click PASTE.
+// `which`: 0 the iCal link, 1 the Slack token, 2 the second iCal link.
 void PasteSecret(int which) {
   std::string v = ReadClipboardText();
   bool ok = false;
-  if (which == 0) {
+  if (which == 0 || which == 2) {
     bool web = v.rfind("https://", 0) == 0 || v.rfind("webcal://", 0) == 0;
     ok = web && v.find(' ') == std::string::npos &&
          (v.find(".ics") != std::string::npos || v.find("/ical/") != std::string::npos);
-    if (ok) ok = SecretSet(kSecretIcal, v);
-    Flash(ok ? "ICAL LINK SAVED  CLIPBOARD CLEARED" : "THE CLIPBOARD HAS NO ICAL LINK");
+    if (ok) ok = SecretSet(which ? kSecretIcal2 : kSecretIcal, v);
+    Flash(ok ? (which ? "SECOND ICAL LINK SAVED  CLIPBOARD CLEARED" : "ICAL LINK SAVED  CLIPBOARD CLEARED")
+             : "THE CLIPBOARD HAS NO ICAL LINK");
   } else {
     ok = (v.rfind("xoxp-", 0) == 0 || v.rfind("xoxb-", 0) == 0 || v.rfind("xoxe.xoxp-", 0) == 0) &&
          v.find(' ') == std::string::npos;
@@ -612,8 +620,8 @@ void OnClick(const Hit& h, int px) {
       break;
     case HIT_S_PASTE: PasteSecret(h.index); break;
     case HIT_S_CLEAR:
-      SecretClear(h.index == 0 ? kSecretIcal : kSecretSlack);
-      Flash(h.index == 0 ? "ICAL LINK REMOVED" : "SLACK TOKEN REMOVED");
+      SecretClear(h.index == 0 ? kSecretIcal : h.index == 2 ? kSecretIcal2 : kSecretSlack);
+      Flash(h.index == 0 ? "ICAL LINK REMOVED" : h.index == 2 ? "SECOND ICAL LINK REMOVED" : "SLACK TOKEN REMOVED");
       RefreshSettingsState();
       OnlineKick();
       break;
@@ -653,12 +661,64 @@ void ShowMenu() {
   }
 }
 
+// ---- low-disk alarm -------------------------------------------------------------
+// A disk under the configured free space flashes in SYSTEM, and Windows is told once when
+// it falls below the line and again under 1 GB. The alarm re-arms only once the disk is
+// 1 GB clear of the line, so a disk hovering at the edge doesn't nag. The notification
+// rides on a tray icon (the route to a toast for a program with no installer), which stays
+// while any disk is low; clicking either opens Storage settings.
+
+void TrayHide() {
+  if (!g.trayShown) return;
+  NOTIFYICONDATAW nid{sizeof nid};
+  nid.hWnd = g.hwnd;
+  nid.uID = 1;
+  Shell_NotifyIconW(NIM_DELETE, &nid);
+  g.trayShown = false;
+}
+
+void TrayNotify(const std::wstring& title, const std::wstring& text) {
+  NOTIFYICONDATAW nid{sizeof nid};
+  nid.hWnd = g.hwnd;
+  nid.uID = 1;
+  nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE | NIF_INFO;
+  nid.uCallbackMessage = WM_PB_TRAY;
+  nid.hIcon = LoadIconW(nullptr, IDI_WARNING);
+  wcsncpy_s(nid.szTip, L"pixelbar: a disk is almost full", _TRUNCATE);
+  wcsncpy_s(nid.szInfoTitle, title.c_str(), _TRUNCATE);
+  wcsncpy_s(nid.szInfo, text.c_str(), _TRUNCATE);
+  nid.dwInfoFlags = NIIF_WARNING;
+  if (!(g.trayShown && Shell_NotifyIconW(NIM_MODIFY, &nid))) g.trayShown = Shell_NotifyIconW(NIM_ADD, &nid) != FALSE;
+}
+
+void CheckDisks() {
+  if (Offscreen() || g.demo) return;
+  constexpr uint64_t kGB = 1ull << 30;
+  uint64_t line = (uint64_t)g_cfg.diskWarnGB * kGB;
+  bool anyLow = false;
+  for (const DiskInfo& d : g.sys.disks) {
+    int& level = g.diskLevel[d.root];
+    int now = !line ? 0 : d.free < kGB ? 2 : d.free < line ? 1 : 0;
+    if (now < level && line && d.free < line + kGB) now = std::max(now, std::min(level, 1));  // hold until clear
+    if (now > level) {
+      std::wstring root = Widen(d.root), free = Widen(FormatBytes(d.free));
+      TrayNotify(root + (now == 2 ? L" is almost out of space" : L" is running low on space"),
+                 free + L" free. Builds, git and agent sessions start failing when it reaches zero. "
+                        L"Click to open Storage settings.");
+    }
+    level = now;
+    anyLow |= now > 0;
+  }
+  if (!anyLow) TrayHide();
+}
+
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   switch (msg) {
     case WM_TIMER:
       switch (wp) {
         case TIMER_TICK: {
           if (!g.demo) SysSample(g.sys);
+          CheckDisks();
           FileStamp st;
           if (Stat(ConfigPath(), st) && !(st == g.cfgStamp)) ReloadConfig();
           ScheduleTick();
@@ -682,6 +742,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_PB_FRAME:
       g_framePending = false;
       if (g.pumping) Render();
+      return 0;
+    case WM_PB_TRAY:
+      if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK) Open(L"ms-settings:storagesense");
       return 0;
     case WM_PB_APPBAR:
       if (wp == ABN_POSCHANGED) {  // the taskbar or another bar moved: re-claim the strip
@@ -784,13 +847,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     case WM_DESTROY:
       AppBarRemove();  // hand the strip back to other windows
+      TrayHide();
       PostQuitMessage(0);
       return 0;
   }
   if (g.taskbarCreated && msg == g.taskbarCreated) {
-    // Explorer restarted: the desktop window is new and app bar registrations are gone.
+    // Explorer restarted: the desktop window is new, and app bar and tray registrations are
+    // gone (a disk still low is announced again on the next tick).
     g.appbar = false;
     g.barRect = RECT{};
+    g.trayShown = false;
+    g.diskLevel.clear();
     Layout();
     Render();
     KeepAboveDesktop();

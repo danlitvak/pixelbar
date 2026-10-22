@@ -25,10 +25,10 @@ In the default order; turn them on, off and reorder them in **Settings**.
 | Agents | each Claude Code / Codex session: working (and the tool it's on), needs you, asks, done (with its recap), stopped, quiet. Click opens the session | the apps' own logs, below |
 | Limits | Claude 5-hour and 7-day usage, Codex window usage and time to reset | Claude desktop's usage samples, Codex rate-limit events |
 | AI today | per app since midnight: turns you typed, model requests, and tokens as new input, cache reads, output and total; output by hour (Claude under Codex) | every Claude Code transcript (subagents included) and Codex rollout written today |
-| Calendar | running and next events, grouped by day | your calendar's private iCal link |
+| Calendar | running and next events, grouped by day, from one or two iCal links merged (your calendar, plus Canvas due dates for example) | private iCal links |
 | Slack | the newest messages of the last two days, yours included ("you"), with the channel or DM partner. DMs to you are brighter. Click opens the message | Slack search API with your user token |
 | Weather | now (dot-matrix), next 8 hours, next 6 days | open-meteo.com, no key |
-| System | CPU + per-core, GPU load / temp / watts / fan, VRAM, RAM, each fixed disk, network rate + latency | GetSystemTimes, NVML (NVIDIA), GlobalMemoryStatusEx, GetIfTable2, ICMP |
+| System | CPU + per-core, GPU load / temp / watts / fan, VRAM, RAM, each fixed disk (flashing under the low-space line), network rate + latency | GetSystemTimes, NVML (NVIDIA), GlobalMemoryStatusEx, GetIfTable2, ICMP |
 | Processes | heaviest apps grouped by name (Chrome's dozens of processes are one row), by RAM or CPU | NtQuerySystemInformation |
 
 <p align="center">
@@ -84,18 +84,27 @@ windows stop at its right side. Quitting hands the strip back. Turn it off with
 directly above the desktop in the z-order: under any window dragged over it, over the
 wallpaper.
 
+**Low-disk alarm.** When a fixed disk has less free space than **LOW DISK ALARM** (Settings >
+SYSTEM; 5 GB by default), its row flashes and Windows shows a notification: once when it
+crosses the line and again under 1 GB. It re-arms only once the disk is 1 GB clear of the
+line, so a disk hovering at the edge doesn't nag. Clicking the notification or its tray icon
+opens Storage settings.
+
 <br clear="right">
 
 ## Calendar and Slack setup
 
-Both secrets live in Windows Credential Manager (`pixelbar:ical`, `pixelbar:slack`), never
-in `config.json`. Copy the value, then click **PASTE** in Settings; pixelbar clears the
-clipboard after saving it.
+The secrets live in Windows Credential Manager (`pixelbar:ical`, `pixelbar:ical2`,
+`pixelbar:slack`), never in `config.json`. Copy the value, then click **PASTE** in Settings;
+pixelbar clears the clipboard after saving it.
 
 - **Calendar**: Google Calendar > Settings > your calendar > Integrate calendar >
   *Secret address in iCal format*. Recurring events (daily, weekly with days, monthly by
   day or nth weekday, yearly), exceptions and moved instances are expanded locally;
   time zones go through ICU.
+- **Second link** (optional): any other iCal feed, merged into the same widget. For Canvas
+  due dates: Canvas > Calendar > *Calendar Feed* (bottom right) > copy the link > **SECOND
+  LINK** > **PASTE**. If one feed fails, the other's events still show, with a note above.
 - **Slack**: api.slack.com/apps > Create New App > From scratch > OAuth & Permissions >
   *User Token Scopes*: `search:read` and `users:read` > Install to Workspace > copy the
   *User OAuth Token* (`xoxp-...`).
@@ -146,6 +155,7 @@ far, and **OUT** is what the models wrote.
 | `calendar`, `slack`, `processes` | `{ "days": 3, "max": 6 }`, `{ "max": 5 }`, `{ "max": 5, "sort": "ram" }` | |
 | `pingHost`, `gpu`, `fps` | `"1.1.1.1"`, `true`, `15` | |
 | `ink` | `{ "dim": 150, "faint": 56, "background": 1 }` | alpha of white; the backing alpha of 1 keeps clicks between pixels on the column |
+| `disk` | `{ "warnGB": 5 }` | the low-disk alarm line; `0` turns it off |
 
 ## Design notes
 
@@ -181,7 +191,8 @@ Codex log readers and limits · `today.cpp` today's usage from the same logs ·
 
 ## Known gaps
 
-- Win+D handling is written but has not been exercised.
+- Win+D handling is written but has not been exercised, and neither has the low-disk
+  notification itself (the flashing row has).
 - AI today counts Claude Code only: chats in the Claude desktop app or on claude.ai
   leave no local log.
 - Codex approval prompts are not in its rollout files, so a Codex session waiting on
