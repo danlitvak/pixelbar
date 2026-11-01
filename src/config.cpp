@@ -88,6 +88,7 @@ bool LoadConfig(Config& c) {
   d.faint = num(ink["faint"], d.faint, 1, 255);
   d.background = num(ink["background"], d.background, 0, 255);
   d.diskWarnGB = num(j["disk"]["warnGB"], d.diskWarnGB, 0, 1000);
+  d.claude5h = flag(j["limits"]["claude5h"], d.claude5h);
   c = d;
   return true;
 }
@@ -117,13 +118,14 @@ bool SaveConfig(const Config& c) {
            "  \"gpu\": %s,\n"
            "  \"fps\": %d,\n"
            "  \"ink\": { \"dim\": %d, \"faint\": %d, \"background\": %d },\n"
-           "  \"disk\": { \"warnGB\": %d }\n"
+           "  \"disk\": { \"warnGB\": %d },\n"
+           "  \"limits\": { \"claude5h\": %s }\n"
            "}\n",
            JQuote(c.monitor).c_str(), c.scale, c.width, c.marginX, c.marginY, kAlign[std::clamp(c.valign, 0, 2)],
            c.reserve ? "true" : "false", sections.c_str(), c.clock24h ? "true" : "false", c.clockSeconds ? "true" : "false", c.clockScale,
            c.agentMax, c.doneMinutes, c.staleMinutes, c.claude ? "true" : "false", c.codex ? "true" : "false",
            JQuote(c.place).c_str(), c.lat, c.lon, c.fahrenheit ? "true" : "false", c.calDays, c.calMax, c.slackMax,
            c.procRows, c.procByCpu ? "cpu" : "ram", JQuote(c.pingHost).c_str(), c.gpu ? "true" : "false", c.fps,
-           c.dim, c.faint, c.background, c.diskWarnGB);
+           c.dim, c.faint, c.background, c.diskWarnGB, c.claude5h ? "true" : "false");
   return WriteAll(ConfigPath(), buf);
 }

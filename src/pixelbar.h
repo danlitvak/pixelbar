@@ -115,6 +115,7 @@ struct Config {
   int fps = 15;
   int dim = 150, faint = 56, background = 1;  // alpha of white on the black desktop
   int diskWarnGB = 5;  // a fixed disk with less free space flashes and Windows is told; 0 = off
+  bool claude5h = true;  // Claude's five-hour window; plans without one (Ultra) turn it off
 };
 extern Config g_cfg;  // written only on the UI thread; other threads read ConfigCopy()
 extern const char* const kSectionNames[];

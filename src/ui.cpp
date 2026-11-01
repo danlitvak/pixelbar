@@ -473,15 +473,30 @@ int LimitRow(Canvas& c, int y, const char* who, const std::vector<LimitWindow>& 
   return y + kLine;
 }
 
+// A window sampled longer ago than its own length says nothing about the current one, so it
+// is dropped rather than shown stale (Claude desktop stops sampling on plans without limits).
+// Claude's five-hour window can also be switched off for plans that have none.
+std::vector<LimitWindow> CurrentWindows(const std::vector<LimitWindow>& ws, int64_t at, int64_t now, bool fiveHour) {
+  std::vector<LimitWindow> out;
+  for (const LimitWindow& w : ws) {
+    if (w.minutes == 300 && !fiveHour) continue;
+    if (!w.resetsAt && at && now - at > (int64_t)w.minutes * 60000) continue;
+    out.push_back(w);
+  }
+  return out;
+}
+
 int Limits(Canvas& c, int y, const UiInput& in) {
   const UsageState& u = *in.usage;
+  std::vector<LimitWindow> claude = CurrentWindows(u.claude, u.claudeAt, in.now, g_cfg.claude5h);
+  std::vector<LimitWindow> codex = CurrentWindows(u.codex, u.codexAt, in.now, true);
   y = Header(c, y, "LIMITS");
-  if (u.claude.empty() && u.codex.empty()) {
-    c.Text(0, y, "NO USAGE DATA YET", FontId::Caps, Lo());
+  if (claude.empty() && codex.empty()) {
+    c.Text(0, y, u.claude.empty() && u.codex.empty() ? "NO USAGE DATA YET" : "NO RECENT USAGE DATA", FontId::Caps, Lo());
     return y + kCap;
   }
-  if (!u.claude.empty()) y = LimitRow(c, y, "CLAUDE", u.claude, u.claudeAt, in.now);
-  if (!u.codex.empty()) y = LimitRow(c, y, "CODEX", u.codex, u.codexAt, in.now);
+  if (!claude.empty()) y = LimitRow(c, y, "CLAUDE", claude, u.claudeAt, in.now);
+  if (!codex.empty()) y = LimitRow(c, y, "CODEX", codex, u.codexAt, in.now);
   return y - (kLine - kCap);
 }
 
@@ -877,7 +892,7 @@ int Processes(Canvas& c, int y, const UiInput& in, UiOutput& out) {
 enum Opt {
   O_24H, O_SECONDS, O_DOTS, O_PLACE, O_UNITS, O_AGENT_ROWS, O_KEEP_DONE, O_CAL_DAYS, O_CAL_ROWS,
   O_SLACK_ROWS, O_PROC_ROWS, O_PROC_SORT, O_MONITOR, O_ALIGN, O_WIDTH, O_DIM, O_FAINT, O_FPS, O_RESERVE,
-  O_DISK_WARN,
+  O_DISK_WARN, O_CLAUDE_5H,
 };
 
 struct Place {
@@ -913,6 +928,7 @@ std::string OptValue(int o) {
     case O_FPS: return std::to_string(c.fps);
     case O_RESERVE: return c.reserve ? "ON" : "OFF";
     case O_DISK_WARN: return c.diskWarnGB ? "UNDER " + std::to_string(c.diskWarnGB) + " GB" : "OFF";
+    case O_CLAUDE_5H: return c.claude5h ? "ON" : "OFF";
   }
   return {};
 }
@@ -962,6 +978,7 @@ void OptStep(Config& c, int o, int dir) {
       c.diskWarnGB = kSteps[std::clamp(i + dir, 0, n - 1)];
       break;
     }
+    case O_CLAUDE_5H: c.claude5h = !c.claude5h; break;
   }
 }
 
@@ -1055,6 +1072,9 @@ int Settings(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   y = Subhead(c, y, "AGENTS");
   y = OptRow(c, y, "ROWS", O_AGENT_ROWS, in, out);
   y = OptRow(c, y, "KEEP FINISHED FOR", O_KEEP_DONE, in, out);
+  y += 6;
+  y = Subhead(c, y, "LIMITS");
+  y = OptRow(c, y, "CLAUDE 5-HOUR", O_CLAUDE_5H, in, out);
   y += 6;
   y = Subhead(c, y, "CALENDAR");
   y = SecretRow(c, y, "ICAL LINK", in.icalSet, 0, in, out);

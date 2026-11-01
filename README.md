@@ -23,7 +23,7 @@ In the default order; turn them on, off and reorder them in **Settings**.
 | Year | every day of the year as a cell, a column per week (Monday on top): days gone filled, today lit, the rest waiting; month initials, day number, percent gone, days left | system clock |
 | Media | 56x56 Atkinson-dithered cover, title marquee, artist, album, progress, prev / play / next, volume wedge, level bars on the real output peak | Windows media session (Spotify, browsers, most players), Core Audio |
 | Agents | each Claude Code / Codex session: working (and the tool it's on), needs you, asks, done (with its recap), stopped, quiet. Click opens the session | the apps' own logs, below |
-| Limits | Claude 5-hour and 7-day usage, Codex window usage and time to reset | Claude desktop's usage samples, Codex rate-limit events |
+| Limits | Claude and Codex usage for each window the plan reports (5-hour, 7-day) and time to reset | Claude desktop's usage samples, Codex rate-limit events |
 | AI today | per app since midnight: turns you typed, model requests, and tokens as new input, cache reads, output and total; output by hour (Claude under Codex) | every Claude Code transcript (subagents included) and Codex rollout written today |
 | Calendar | running and next events, grouped by day, from one or two iCal links merged (your calendar, plus Canvas due dates for example) | private iCal links |
 | Slack | the newest messages of the last two days, yours included ("you"), with the channel or DM partner. DMs to you are brighter. Click opens the message | Slack search API with your user token |
@@ -89,6 +89,12 @@ SYSTEM; 5 GB by default), its row flashes and Windows shows a notification: once
 crosses the line and again under 1 GB. It re-arms only once the disk is 1 GB clear of the
 line, so a disk hovering at the edge doesn't nag. Clicking the notification or its tray icon
 opens Storage settings.
+
+**Plans without a window.** Limits shows only the windows a plan still reports. A reading
+older than its own window is dropped rather than shown stale: Claude desktop stops sampling
+on plans without limits, and Codex now reports a single weekly window on some plans. Plans
+with no five-hour window (Claude Ultra) can hide it with **CLAUDE 5-HOUR** (Settings >
+LIMITS).
 
 <br clear="right">
 
@@ -156,6 +162,7 @@ far, and **OUT** is what the models wrote.
 | `pingHost`, `gpu`, `fps` | `"1.1.1.1"`, `true`, `15` | |
 | `ink` | `{ "dim": 150, "faint": 56, "background": 1 }` | alpha of white; the backing alpha of 1 keeps clicks between pixels on the column |
 | `disk` | `{ "warnGB": 5 }` | the low-disk alarm line; `0` turns it off |
+| `limits` | `{ "claude5h": true }` | `false` hides Claude's five-hour window, for plans that have none |
 
 ## Design notes
 
