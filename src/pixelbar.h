@@ -115,6 +115,7 @@ struct Config {
   int fps = 15;
   int dim = 150, faint = 56, background = 1;  // alpha of white on the black desktop
   int diskWarnGB = 5;  // a fixed disk with less free space flashes and Windows is told; 0 = off
+  int pagefileWarnGB = 48;  // a pagefile grown past this flashes and Windows is told; 0 = off
   bool claude5h = true;  // Claude's five-hour window; plans without one (Ultra) turn it off
 };
 extern Config g_cfg;  // written only on the UI thread; other threads read ConfigCopy()
@@ -219,6 +220,8 @@ struct SysState {
   std::vector<float> cores;
   std::vector<float> cpuHist, gpuHist, downHist, upHist;  // oldest first
   uint64_t ramUsed = 0, ramTotal = 0;
+  uint64_t commitUsed = 0, commitLimit = 0;  // memory promised to programs, and the most Windows can back
+  uint64_t pagefile = 0;                     // disk space the pagefiles hold, in use or not
   std::vector<DiskInfo> disks;
   std::vector<ProcInfo> procs;  // every process name, heaviest memory first
   double down = 0, up = 0;      // bytes per second

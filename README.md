@@ -28,7 +28,7 @@ In the default order; turn them on, off and reorder them in **Settings**.
 | Calendar | running and next events, grouped by day, from one or two iCal links merged (your calendar, plus Canvas due dates for example) | private iCal links |
 | Slack | the newest messages of the last two days, yours included ("you"), with the channel or DM partner. DMs to you are brighter. Click opens the message | Slack search API with your user token |
 | Weather | now (dot-matrix), next 8 hours, next 6 days | open-meteo.com, no key |
-| System | CPU + per-core, GPU load / temp / watts / fan, VRAM, RAM, each fixed disk (flashing under the low-space line), network rate + latency | GetSystemTimes, NVML (NVIDIA), GlobalMemoryStatusEx, GetIfTable2, ICMP |
+| System | CPU + per-core, GPU load / temp / watts / fan, VRAM, RAM, committed memory against its limit and the size of the pagefile (flashing once the pagefile outgrows its line), each fixed disk (flashing under the low-space line), network rate + latency | GetSystemTimes, NVML (NVIDIA), GlobalMemoryStatusEx, GetPerformanceInfo, GetIfTable2, ICMP |
 | Processes | heaviest apps grouped by name (Chrome's dozens of processes are one row), by RAM or CPU | NtQuerySystemInformation |
 
 <p align="center">
@@ -89,6 +89,18 @@ SYSTEM; 5 GB by default), its row flashes and Windows shows a notification: once
 crosses the line and again under 1 GB. It re-arms only once the disk is 1 GB clear of the
 line, so a disk hovering at the edge doesn't nag. Clicking the notification or its tray icon
 opens Storage settings.
+
+**Commit and the pagefile alarm.** The COMM row is committed memory (what programs have been
+promised, touched or not) against the commit limit, which is RAM plus the pagefile, then the
+space the pagefile holds on disk. When commit reaches 90% of the limit, Windows starts growing
+a system-managed pagefile, up to three times RAM, and gives the space back only on a restart:
+a spike nobody saw can fill a drive and leave nothing running to blame. So the percentage
+brightens at 90%, and when the pagefile is larger than **PAGEFILE ALARM** (Settings > SYSTEM;
+48 GB by default) the row flashes and Windows shows one notification, while the program that
+asked for the memory may still be running. Clicking the notification or its tray icon opens
+Task Manager; under Details, right-click a column header and add *Commit size* to see who
+holds it. The row flashes until a restart shrinks the pagefile or the line is raised, and the
+alarm re-arms once the pagefile is 1 GB under the line.
 
 **Plans without a window.** Limits shows only the windows a plan still reports. A reading
 older than its own window is dropped rather than shown stale: Claude desktop stops sampling
@@ -162,6 +174,7 @@ far, and **OUT** is what the models wrote.
 | `pingHost`, `gpu`, `fps` | `"1.1.1.1"`, `true`, `15` | |
 | `ink` | `{ "dim": 150, "faint": 56, "background": 1 }` | alpha of white; the backing alpha of 1 keeps clicks between pixels on the column |
 | `disk` | `{ "warnGB": 5 }` | the low-disk alarm line; `0` turns it off |
+| `pagefile` | `{ "warnGB": 48 }` | the pagefile alarm line; `0` turns it off |
 | `limits` | `{ "claude5h": true }` | `false` hides Claude's five-hour window, for plans that have none |
 
 ## Design notes
@@ -198,8 +211,14 @@ Codex log readers and limits · `today.cpp` today's usage from the same logs ·
 
 ## Known gaps
 
-- Win+D handling is written but has not been exercised, and neither has the low-disk
-  notification itself (the flashing row has).
+- Win+D handling is written but has not been exercised, and neither have the low-disk and
+  pagefile notifications themselves (the flashing rows have, the pagefile one with a
+  simulated size). Setting **PAGEFILE ALARM** below the pagefile's current size fires that
+  one for real.
+- The pagefile figure is the size Windows reports (commit limit minus RAM, the same number
+  as `Win32_PageFileUsage`). The two matched the file exactly at rest. Once, minutes after
+  the pagefile started growing, the file's directory entry read 26.1 GB against 17.0 GB
+  reported, and which of the two the disk had really given up was not settled.
 - AI today counts Claude Code only: chats in the Claude desktop app or on claude.ai
   leave no local log.
 - Codex approval prompts are not in its rollout files, so a Codex session waiting on

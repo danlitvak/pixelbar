@@ -830,6 +830,23 @@ int System(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   Cells(c, 0, y, c.w, 3, 60, 1, ram);
   y += 3 + 6;
 
+  // Commit: what programs have been promised against what RAM and the pagefile can back.
+  // At 90% of the limit Windows starts growing the pagefile, and it keeps that disk space
+  // until a restart. So the row reads like a disk's: the percentage brightens at 90%, and a
+  // pagefile past the alarm line flashes while whatever asked for the memory may still be running.
+  if (s.commitLimit) {
+    double commit = (double)s.commitUsed / s.commitLimit;
+    bool big = g_cfg.pagefileWarnGB && s.pagefile > ((uint64_t)g_cfg.pagefileWarnGB << 30);
+    bool lit = big && (in.now / 400) % 2 == 0;
+    if (lit) c.Fill(0, y - 2, c.w, kLine + 4 + 3, Alpha(40));
+    std::string detail = FormatBytes(s.commitUsed) + " / " + FormatBytes(s.commitLimit) + "  " +
+                         (!s.pagefile ? "NO PAGEFILE" : (big ? "BIG PAGEFILE " : "PAGEFILE ") + FormatBytes(s.pagefile));
+    y = Metric(c, y, "COMM", detail, Pct(commit), lit || (!big && commit >= 0.9) ? kHi : big ? Lo() : Mid());
+    Cells(c, 0, y, c.w, 3, 60, 1, commit);
+    y += 3 + 6;
+    if (big) out.animating = true;
+  }
+
   for (const DiskInfo& d : s.disks) {
     double used = 1.0 - (double)d.free / d.total;
     // Under the alarm line the row flashes: a full disk takes builds, git and agents down with it.
@@ -892,7 +909,7 @@ int Processes(Canvas& c, int y, const UiInput& in, UiOutput& out) {
 enum Opt {
   O_24H, O_SECONDS, O_DOTS, O_PLACE, O_UNITS, O_AGENT_ROWS, O_KEEP_DONE, O_CAL_DAYS, O_CAL_ROWS,
   O_SLACK_ROWS, O_PROC_ROWS, O_PROC_SORT, O_MONITOR, O_ALIGN, O_WIDTH, O_DIM, O_FAINT, O_FPS, O_RESERVE,
-  O_DISK_WARN, O_CLAUDE_5H,
+  O_DISK_WARN, O_CLAUDE_5H, O_PAGEFILE_WARN,
 };
 
 struct Place {
@@ -929,6 +946,7 @@ std::string OptValue(int o) {
     case O_RESERVE: return c.reserve ? "ON" : "OFF";
     case O_DISK_WARN: return c.diskWarnGB ? "UNDER " + std::to_string(c.diskWarnGB) + " GB" : "OFF";
     case O_CLAUDE_5H: return c.claude5h ? "ON" : "OFF";
+    case O_PAGEFILE_WARN: return c.pagefileWarnGB ? "OVER " + std::to_string(c.pagefileWarnGB) + " GB" : "OFF";
   }
   return {};
 }
@@ -979,6 +997,18 @@ void OptStep(Config& c, int o, int dir) {
       break;
     }
     case O_CLAUDE_5H: c.claude5h = !c.claude5h; break;
+    case O_PAGEFILE_WARN: {
+      static const int kSteps[] = {0, 8, 16, 24, 32, 48, 64, 96, 128};
+      int n = (int)std::size(kSteps);
+      for (int i = 0; i < n; i++) {  // the nearest step that way; a hand-edited value need not be on one
+        int s = kSteps[dir > 0 ? i : n - 1 - i];
+        if (dir > 0 ? s > c.pagefileWarnGB : s < c.pagefileWarnGB) {
+          c.pagefileWarnGB = s;
+          break;
+        }
+      }
+      break;
+    }
   }
 }
 
@@ -1092,6 +1122,7 @@ int Settings(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   y += 6;
   y = Subhead(c, y, "SYSTEM");
   y = OptRow(c, y, "LOW DISK ALARM", O_DISK_WARN, in, out);
+  y = OptRow(c, y, "PAGEFILE ALARM", O_PAGEFILE_WARN, in, out);
   y += 6;
   y = Subhead(c, y, "DISPLAY");
   y = OptRow(c, y, "MONITOR", O_MONITOR, in, out);

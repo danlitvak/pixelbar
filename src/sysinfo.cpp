@@ -1,4 +1,4 @@
-// CPU, per-core load, GPU, RAM, disks, processes, network throughput and latency.
+// CPU, per-core load, GPU, RAM, commit and pagefile, disks, processes, network throughput and latency.
 #include "pixelbar.h"
 
 #include <winsock2.h>
@@ -439,6 +439,16 @@ void SysSample(SysState& st) {
   if (GlobalMemoryStatusEx(&ms)) {
     st.ramTotal = ms.ullTotalPhys;
     st.ramUsed = ms.ullTotalPhys - ms.ullAvailPhys;
+  }
+  // Commit for the whole system (GlobalMemoryStatusEx caps its figures to the calling
+  // process's own limit). The limit is RAM plus every pagefile, so what it has beyond RAM is
+  // the space the pagefiles hold on disk: the number Win32_PageFileUsage calls AllocatedBaseSize.
+  PERFORMANCE_INFORMATION pi{sizeof pi};
+  if (GetPerformanceInfo(&pi, sizeof pi)) {
+    uint64_t page = pi.PageSize;
+    st.commitUsed = pi.CommitTotal * page;
+    st.commitLimit = pi.CommitLimit * page;
+    st.pagefile = pi.CommitLimit > pi.PhysicalTotal ? (pi.CommitLimit - pi.PhysicalTotal) * page : 0;
   }
 
   if (g_tick % 2 == 0) SampleProcesses(st.procs);

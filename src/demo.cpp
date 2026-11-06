@@ -184,6 +184,8 @@ int64_t DemoFill(int64_t t, MediaState& media, AudioState& audio, SysState& sys,
   sys.gpuTemp = 56, sys.gpuFan = 38, sys.gpuWatts = 112;
   sys.vramUsed = 3 * kGB + 100 * kMB, sys.vramTotal = 8 * kGB;
   sys.ramUsed = 18 * kGB + 410 * kMB, sys.ramTotal = 32 * kGB - 100 * kMB;
+  sys.pagefile = 16 * kGB;
+  sys.commitUsed = 23 * kGB + 400 * kMB, sys.commitLimit = sys.ramTotal + sys.pagefile;
   sys.disks = {{"C:", 931 * kGB, 312 * kGB}, {"D:", 1863 * kGB, 1020 * kGB}};
   sys.downHist = Wave(n, 1.6e6, 1.3e6, 7 + sec * 0.05);
   sys.upHist = Wave(n, 2.2e5, 1.8e5, 9 + sec * 0.05);

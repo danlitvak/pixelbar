@@ -33,10 +33,11 @@ const wchar_t kRunName[] = L"pixelbar";
 
 constexpr UINT WM_PB_APPBAR = WM_APP + 3;  // shell notifications for the reserved strip
 constexpr UINT WM_PB_FRAME = WM_APP + 4;   // the frame pump: draw now, a refresh just began
-constexpr UINT WM_PB_TRAY = WM_APP + 5;    // the low-disk tray icon was clicked
+constexpr UINT WM_PB_TRAY = WM_APP + 5;    // an alarm's tray icon was clicked
 
 enum { TIMER_TICK = 1, TIMER_ANIM, TIMER_ZORDER, TIMER_ZORDER_SOON, TIMER_DUMP };
 enum { CMD_SETTINGS = 1, CMD_EDIT, CMD_RELOAD, CMD_AUTOSTART, CMD_EXIT };
+enum { TRAY_DISK = 1, TRAY_PAGEFILE };  // one tray icon per alarm; its id says which was clicked
 
 struct App {
   HWND hwnd = nullptr;
@@ -67,8 +68,9 @@ struct App {
   bool settings = false, autostart = false, icalSet = false, ical2Set = false, slackSet = false;
   std::string flash;
   int64_t flashUntil = 0;
-  bool trayShown = false;                       // the low-disk icon is in the notification area
+  bool trayShown[3] = {};                       // by tray id: that alarm's icon is in the notification area
   std::unordered_map<std::string, int> diskLevel;  // per disk: 0 fine, 1 warned, 2 critical
+  bool pagefileWarned = false;                  // Windows has been told the pagefile is past its line
   FileStamp cfgStamp;
   UINT taskbarCreated = 0;
   bool appbar = false;  // registered with the shell as an app bar
@@ -668,27 +670,28 @@ void ShowMenu() {
 // rides on a tray icon (the route to a toast for a program with no installer), which stays
 // while any disk is low; clicking either opens Storage settings.
 
-void TrayHide() {
-  if (!g.trayShown) return;
+void TrayHide(int id) {
+  if (!g.trayShown[id]) return;
   NOTIFYICONDATAW nid{sizeof nid};
   nid.hWnd = g.hwnd;
-  nid.uID = 1;
+  nid.uID = (UINT)id;
   Shell_NotifyIconW(NIM_DELETE, &nid);
-  g.trayShown = false;
+  g.trayShown[id] = false;
 }
 
-void TrayNotify(const std::wstring& title, const std::wstring& text) {
+void TrayNotify(int id, const wchar_t* tip, const std::wstring& title, const std::wstring& text) {
   NOTIFYICONDATAW nid{sizeof nid};
   nid.hWnd = g.hwnd;
-  nid.uID = 1;
+  nid.uID = (UINT)id;
   nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE | NIF_INFO;
   nid.uCallbackMessage = WM_PB_TRAY;
   nid.hIcon = LoadIconW(nullptr, IDI_WARNING);
-  wcsncpy_s(nid.szTip, L"pixelbar: a disk is almost full", _TRUNCATE);
+  wcsncpy_s(nid.szTip, tip, _TRUNCATE);
   wcsncpy_s(nid.szInfoTitle, title.c_str(), _TRUNCATE);
   wcsncpy_s(nid.szInfo, text.c_str(), _TRUNCATE);
   nid.dwInfoFlags = NIIF_WARNING;
-  if (!(g.trayShown && Shell_NotifyIconW(NIM_MODIFY, &nid))) g.trayShown = Shell_NotifyIconW(NIM_ADD, &nid) != FALSE;
+  if (!(g.trayShown[id] && Shell_NotifyIconW(NIM_MODIFY, &nid)))
+    g.trayShown[id] = Shell_NotifyIconW(NIM_ADD, &nid) != FALSE;
 }
 
 void CheckDisks() {
@@ -702,14 +705,40 @@ void CheckDisks() {
     if (now < level && line && d.free < line + kGB) now = std::max(now, std::min(level, 1));  // hold until clear
     if (now > level) {
       std::wstring root = Widen(d.root), free = Widen(FormatBytes(d.free));
-      TrayNotify(root + (now == 2 ? L" is almost out of space" : L" is running low on space"),
+      TrayNotify(TRAY_DISK, L"pixelbar: a disk is almost full",
+                 root + (now == 2 ? L" is almost out of space" : L" is running low on space"),
                  free + L" free. Builds, git and agent sessions start failing when it reaches zero. "
                         L"Click to open Storage settings.");
     }
     level = now;
     anyLow |= now > 0;
   }
-  if (!anyLow) TrayHide();
+  if (!anyLow) TrayHide(TRAY_DISK);
+}
+
+// ---- pagefile alarm -------------------------------------------------------------
+// Windows grows the pagefile when commit nears its limit and hands the disk space back only
+// on a restart, so a spike nobody saw can leave a drive full with nothing left running to
+// blame. A pagefile past the configured size flashes the COMM row in SYSTEM, and Windows is
+// told once, while whatever asked for the memory can still be caught. The alarm re-arms once
+// the pagefile is 1 GB under the line. It has its own tray icon; clicking it or the
+// notification opens Task Manager.
+
+void CheckPagefile() {
+  if (Offscreen() || g.demo) return;
+  constexpr uint64_t kGB = 1ull << 30;
+  uint64_t line = (uint64_t)g_cfg.pagefileWarnGB * kGB, size = g.sys.pagefile;
+  bool over = line && (size > line || (g.pagefileWarned && size + kGB > line));  // hold until clear
+  if (over && !g.pagefileWarned) {
+    TrayNotify(TRAY_PAGEFILE, L"pixelbar: the pagefile has grown",
+               L"The pagefile has grown to " + Widen(FormatBytes(size)),
+               L"Committed memory is " + Widen(FormatBytes(g.sys.commitUsed)) + L" of " +
+                   Widen(FormatBytes(g.sys.commitLimit)) +
+                   L". Look for what is using it while it is still running: the disk space only "
+                   L"comes back after a restart. Click to open Task Manager.");
+  }
+  g.pagefileWarned = over;
+  if (!over) TrayHide(TRAY_PAGEFILE);
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -719,6 +748,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case TIMER_TICK: {
           if (!g.demo) SysSample(g.sys);
           CheckDisks();
+          CheckPagefile();
           FileStamp st;
           if (Stat(ConfigPath(), st) && !(st == g.cfgStamp)) ReloadConfig();
           ScheduleTick();
@@ -743,8 +773,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       g_framePending = false;
       if (g.pumping) Render();
       return 0;
-    case WM_PB_TRAY:
-      if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK) Open(L"ms-settings:storagesense");
+    case WM_PB_TRAY:  // wp is the id of the icon that was clicked
+      if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK)
+        Open(wp == TRAY_PAGEFILE ? L"taskmgr.exe" : L"ms-settings:storagesense");
       return 0;
     case WM_PB_APPBAR:
       if (wp == ABN_POSCHANGED) {  // the taskbar or another bar moved: re-claim the strip
@@ -847,17 +878,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       return 0;
     case WM_DESTROY:
       AppBarRemove();  // hand the strip back to other windows
-      TrayHide();
+      TrayHide(TRAY_DISK);
+      TrayHide(TRAY_PAGEFILE);
       PostQuitMessage(0);
       return 0;
   }
   if (g.taskbarCreated && msg == g.taskbarCreated) {
     // Explorer restarted: the desktop window is new, and app bar and tray registrations are
-    // gone (a disk still low is announced again on the next tick).
+    // gone (an alarm still standing is announced again on the next tick).
     g.appbar = false;
     g.barRect = RECT{};
-    g.trayShown = false;
+    g.trayShown[TRAY_DISK] = g.trayShown[TRAY_PAGEFILE] = false;
     g.diskLevel.clear();
+    g.pagefileWarned = false;
     Layout();
     Render();
     KeepAboveDesktop();
