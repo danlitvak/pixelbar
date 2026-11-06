@@ -443,6 +443,8 @@ void SysSample(SysState& st) {
   // Commit for the whole system (GlobalMemoryStatusEx caps its figures to the calling
   // process's own limit). The limit is RAM plus every pagefile, so what it has beyond RAM is
   // the space the pagefiles hold on disk: the number Win32_PageFileUsage calls AllocatedBaseSize.
+  // (A directory listing of pagefile.sys is no substitute: its entry can go stale. It has read
+  // 26 GB while Windows reported 17, and agreed with Windows again at its next update.)
   PERFORMANCE_INFORMATION pi{sizeof pi};
   if (GetPerformanceInfo(&pi, sizeof pi)) {
     uint64_t page = pi.PageSize;

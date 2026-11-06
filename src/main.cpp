@@ -717,8 +717,8 @@ void CheckDisks() {
 }
 
 // ---- pagefile alarm -------------------------------------------------------------
-// Windows grows the pagefile when commit nears its limit and hands the disk space back only
-// on a restart, so a spike nobody saw can leave a drive full with nothing left running to
+// Windows grows the pagefile when commit nears its limit and can keep the disk space until
+// a restart, so a spike nobody saw can leave a drive full with nothing left running to
 // blame. A pagefile past the configured size flashes the COMM row in SYSTEM, and Windows is
 // told once, while whatever asked for the memory can still be caught. The alarm re-arms once
 // the pagefile is 1 GB under the line. It has its own tray icon; clicking it or the
@@ -734,8 +734,8 @@ void CheckPagefile() {
                L"The pagefile has grown to " + Widen(FormatBytes(size)),
                L"Committed memory is " + Widen(FormatBytes(g.sys.commitUsed)) + L" of " +
                    Widen(FormatBytes(g.sys.commitLimit)) +
-                   L". Look for what is using it while it is still running: the disk space only "
-                   L"comes back after a restart. Click to open Task Manager.");
+                   L". Look for what is using it while it is still running: Windows can keep the "
+                   L"disk space until a restart. Click to open Task Manager.");
   }
   g.pagefileWarned = over;
   if (!over) TrayHide(TRAY_PAGEFILE);
@@ -774,8 +774,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       if (g.pumping) Render();
       return 0;
     case WM_PB_TRAY:  // wp is the id of the icon that was clicked
-      if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK)
-        Open(wp == TRAY_PAGEFILE ? L"taskmgr.exe" : L"ms-settings:storagesense");
+      if (LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == NIN_BALLOONUSERCLICK) {
+        if (wp == TRAY_PAGEFILE) {
+          wchar_t sys[MAX_PATH];  // by full path, so no other taskmgr.exe on the search path can run
+          UINT n = GetSystemDirectoryW(sys, MAX_PATH);
+          if (n && n < MAX_PATH) Open(std::wstring(sys, n) + L"\\taskmgr.exe");
+        } else {
+          Open(L"ms-settings:storagesense");
+        }
+      }
       return 0;
     case WM_PB_APPBAR:
       if (wp == ABN_POSCHANGED) {  // the taskbar or another bar moved: re-claim the strip

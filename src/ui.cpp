@@ -831,7 +831,7 @@ int System(Canvas& c, int y, const UiInput& in, UiOutput& out) {
   y += 3 + 6;
 
   // Commit: what programs have been promised against what RAM and the pagefile can back.
-  // At 90% of the limit Windows starts growing the pagefile, and it keeps that disk space
+  // At 90% of the limit Windows starts growing the pagefile, and it can keep that disk space
   // until a restart. So the row reads like a disk's: the percentage brightens at 90%, and a
   // pagefile past the alarm line flashes while whatever asked for the memory may still be running.
   if (s.commitLimit) {

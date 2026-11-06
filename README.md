@@ -93,8 +93,8 @@ opens Storage settings.
 **Commit and the pagefile alarm.** The COMM row is committed memory (what programs have been
 promised, touched or not) against the commit limit, which is RAM plus the pagefile, then the
 space the pagefile holds on disk. When commit reaches 90% of the limit, Windows starts growing
-a system-managed pagefile, up to three times RAM, and gives the space back only on a restart:
-a spike nobody saw can fill a drive and leave nothing running to blame. So the percentage
+a system-managed pagefile, up to three times RAM, and can keep the space until a restart: a
+spike nobody saw can fill a drive and leave nothing running to blame. So the percentage
 brightens at 90%, and when the pagefile is larger than **PAGEFILE ALARM** (Settings > SYSTEM;
 48 GB by default) the row flashes and Windows shows one notification, while the program that
 asked for the memory may still be running. Clicking the notification or its tray icon opens
@@ -215,10 +215,6 @@ Codex log readers and limits · `today.cpp` today's usage from the same logs ·
   pagefile notifications themselves (the flashing rows have, the pagefile one with a
   simulated size). Setting **PAGEFILE ALARM** below the pagefile's current size fires that
   one for real.
-- The pagefile figure is the size Windows reports (commit limit minus RAM, the same number
-  as `Win32_PageFileUsage`). The two matched the file exactly at rest. Once, minutes after
-  the pagefile started growing, the file's directory entry read 26.1 GB against 17.0 GB
-  reported, and which of the two the disk had really given up was not settled.
 - AI today counts Claude Code only: chats in the Claude desktop app or on claude.ai
   leave no local log.
 - Codex approval prompts are not in its rollout files, so a Codex session waiting on
