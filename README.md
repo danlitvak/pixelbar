@@ -99,8 +99,8 @@ brightens at 90%, and when the pagefile is larger than **PAGEFILE ALARM** (Setti
 48 GB by default) the row flashes and Windows shows one notification, while the program that
 asked for the memory may still be running. Clicking the notification or its tray icon opens
 Task Manager; under Details, right-click a column header and add *Commit size* to see who
-holds it. The row flashes until a restart shrinks the pagefile or the line is raised, and the
-alarm re-arms once the pagefile is 1 GB under the line.
+holds it. The row flashes until the pagefile is back under the line, which can take a restart,
+or until the line is raised; the alarm re-arms once the pagefile is 1 GB under the line.
 
 **Plans without a window.** Limits shows only the windows a plan still reports. A reading
 older than its own window is dropped rather than shown stale: Claude desktop stops sampling
@@ -211,10 +211,11 @@ Codex log readers and limits · `today.cpp` today's usage from the same logs ·
 
 ## Known gaps
 
-- Win+D handling is written but has not been exercised, and neither have the low-disk and
-  pagefile notifications themselves (the flashing rows have, the pagefile one with a
-  simulated size). Setting **PAGEFILE ALARM** below the pagefile's current size fires that
-  one for real.
+- Win+D handling is written but has not been exercised, and neither has the low-disk
+  notification itself (the flashing rows have, the pagefile one with a simulated size).
+  The pagefile notification has been seen once: with **PAGEFILE ALARM** set below the
+  pagefile's size, Windows showed it two seconds later, and its tray icon left when the
+  line went back up. Clicking it has not been tried.
 - AI today counts Claude Code only: chats in the Claude desktop app or on claude.ai
   leave no local log.
 - Codex approval prompts are not in its rollout files, so a Codex session waiting on
